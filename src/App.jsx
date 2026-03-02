@@ -333,17 +333,28 @@ function useBackgroundEffect(videoRef, canvasRef, selectedBg, segmenterRef, segm
           if (!hasPrev) {
             blendMaskRef.current = new Float32Array(mask);
           } else {
+            // Estimate how much the mask changed between frames (coarse sample for speed)
             let diff = 0;
-            for (let i = 0; i < mask.length; i += 16) {
+            const stride = 16;
+            const sampleCount = mask.length / stride;
+            for (let i = 0; i < mask.length; i += stride) {
               diff += Math.abs(mask[i] - prev[i]);
             }
-            diff /= (mask.length >> 4);
-            const globalAlpha = Math.min(0.9, 0.15 + diff * 6.0);
+            diff /= sampleCount;
+
+            // Motion-aware alpha:
+            // - higher when motion is large (so the boundary keeps up with the subject)
+            // - lower when almost static (to keep things stable and denoised)
+            const motion = Math.max(0, Math.min(1, diff * 8.0));
+            const baseAlpha = 0.25;
+            const globalAlpha = baseAlpha + motion * 0.55; // 0.25 → 0.80
+
             const blend = blendMaskRef.current;
             for (let i = 0; i < mask.length; i++) {
               const curr = mask[i];
               const uncertainty = 1.0 - Math.abs(curr * 2.0 - 1.0);
-              const localAlpha = globalAlpha + uncertainty * (1.0 - globalAlpha);
+              const confidence = 1.0 - uncertainty;
+              const localAlpha = Math.max(0, Math.min(1, globalAlpha + confidence * 0.15));
               blend[i] = curr * localAlpha + blend[i] * (1.0 - localAlpha);
             }
           }
@@ -360,9 +371,9 @@ function useBackgroundEffect(videoRef, canvasRef, selectedBg, segmenterRef, segm
         }
 
         const segTime = performance.now() - segStart;
-        const avg = avgFrameTimeRef.current = avgFrameTimeRef.current * 0.9 + segTime * 0.1;
-        if (avg > 8 && skipIntervalRef.current < 2) skipIntervalRef.current++;
-        else if (avg < 3 && skipIntervalRef.current > 1) skipIntervalRef.current--;
+        avgFrameTimeRef.current = avgFrameTimeRef.current * 0.9 + segTime * 0.1;
+        // Always segment every frame for minimal temporal lag at the subject boundary
+        skipIntervalRef.current = 1;
       }
 
       if (!hasMaskRef.current) {
