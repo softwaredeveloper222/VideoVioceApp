@@ -755,12 +755,14 @@ function RecordScreen({ onNext, onBack }) {
         {/* Background picker */}
         {phase === "setup" && (
           <div style={styles.bgSection} className="bg-section anim-slide-up">
-            <p style={styles.bgTitle}>
-              Virtual Background
-              {!segmenterReady && !segmenterError && (
-                <span style={styles.segmenterLoadingText}> · loading AI…</span>
-              )}
-            </p>
+            <div style={styles.bgTitleBar}>
+              <p style={styles.bgTitle}>
+                Virtual Background
+                {!segmenterReady && !segmenterError && (
+                  <span style={styles.segmenterLoadingText}> · loading AI…</span>
+                )}
+              </p>
+            </div>
             <div style={styles.bgThumbs} className="bg-thumbs">
               {BACKGROUNDS.map((bg) => (
                 <button
@@ -1502,13 +1504,21 @@ const styles = {
     flexDirection: "column",
     alignItems: "center",
   },
+  bgTitleBar: {
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: "4px 14px",
+    borderRadius: 999,
+    background: "linear-gradient(120deg, rgba(7, 8, 15, 0.9), rgba(34, 16, 56, 0.9))",
+    border: "1px solid rgba(255,255,255,0.16)",
+    boxShadow: "0 6px 18px rgba(0,0,0,0.65)",
+    marginBottom: 10,
+  },
   bgTitle: {
     fontSize: 12, fontWeight: 700,
-    backgroundImage: "linear-gradient(120deg, #ffffff, #ff90c5)",
-    WebkitBackgroundClip: "text",
-    backgroundClip: "text",
-    color: "transparent",
-    margin: "0 0 10px",
+    color: "#ffffff",
+    margin: 0,
     letterSpacing: "0.1em", textTransform: "uppercase",
   },
   bgThumbs: {
