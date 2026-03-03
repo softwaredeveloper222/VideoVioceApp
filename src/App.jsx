@@ -93,6 +93,13 @@ uniform sampler2D u_bg;
 uniform int u_mode;
 uniform vec2 u_texelSize;     // full-res video texel (1/W, 1/H) — for Sobel
 uniform vec2 u_maskTexelSize; // mask-space texel  (1/256, 1/144)
+uniform float u_sigmaSpace;   // spatial blur (0-10), higher = softer edges
+uniform float u_edgeBlur;     // extra boundary blur (0-8), smooths character/background edge
+uniform float u_sigmaColor;   // color-aware (0-1), lower = smoother across edges
+uniform vec2 u_coverage;      // smoothstep min,max — wider = softer transition
+uniform float u_lightWrapping;// background bleed onto person edge (0-1)
+uniform int u_blendMode;      // 0=Screen, 1=Linear dodge
+uniform int u_hasImageBg;     // 1 = image/upload bg (light wrap applies)
 in vec2 v_uv;
 out vec4 fragColor;
 
@@ -102,19 +109,26 @@ void main() {
 
   const vec3 luma = vec3(0.299, 0.587, 0.114);
 
-  // ── Pass 1: Joint Bilateral Upsampling ────────────────────────────────────
+  // ── Pass 1: Joint Bilateral Upsampling ───
+  // Edge blur expands kernel 3x3→5x5 and adds sigma for smoother boundary
+  float sigmaSpaceEff = u_sigmaSpace + u_edgeBlur * 1.5;
+  float sigmaSq = max(0.01, sigmaSpaceEff * sigmaSpaceEff);
+  float sigmaColorSq = max(0.0001, u_sigmaColor * u_sigmaColor);
   float lumC  = dot(vid.rgb, luma);
   float totalW = 0.0;
   float mRaw = 0.0, mBlend = 0.0;
-  for (int dy = -1; dy <= 1; dy++) {
-    for (int dx = -1; dx <= 1; dx++) {
+  int r = (u_edgeBlur > 0.0) ? 2 : 1;  // radius 1 (3x3) or 2 (5x5) when edge blur on
+  for (int dy = -2; dy <= 2; dy++) {
+    for (int dx = -2; dx <= 2; dx++) {
+      if (abs(dx) > r || abs(dy) > r) continue;
       vec2  mUV   = v_uv + vec2(float(dx), float(dy)) * u_maskTexelSize;
       float rawV  = texture(u_rawMask, mUV).r;
       float blndV = texture(u_mask,    mUV).r;
       float lumN  = dot(texture(u_video, mUV).rgb, luma);
-      float wS = exp(-float(dx*dx + dy*dy) * 0.5);
+      float d2 = float(dx*dx + dy*dy);
+      float wS = exp(-d2 / (2.0 * sigmaSq));
       float dL = lumN - lumC;
-      float wR = exp(-dL * dL * 35.0);
+      float wR = exp(-dL * dL / (2.0 * sigmaColorSq));
       float w  = wS * wR;
       mRaw   += rawV  * w;
       mBlend += blndV * w;
@@ -126,7 +140,7 @@ void main() {
 
   // ── Pass 2: Boundary-aware raw / blend mix ────────────────────────────────
   float uncertainty = 1.0 - abs(mRaw * 2.0 - 1.0);
-  float m = mix(mBlend, mRaw, clamp(uncertainty * 2.0, 0.0, 1.0));
+  float m = mix(mBlend, mRaw, clamp(0.25 + uncertainty * 1.5, 0.0, 1.0));
 
   // ── Pass 3: Full-resolution video-space edge snap (Sobel) ─────────────────
   float lumR = dot(texture(u_video, v_uv + vec2( u_texelSize.x, 0.0)).rgb, luma);
@@ -135,13 +149,26 @@ void main() {
   float lumD = dot(texture(u_video, v_uv + vec2(0.0, -u_texelSize.y)).rgb, luma);
   float videoEdge = clamp(length(vec2(lumR - lumL, lumU - lumD)) * 7.0, 0.0, 1.0);
   float mSnap = step(0.5, m);
-  m = mix(m, mSnap, videoEdge * uncertainty * 0.85);
+  float snapStrength = 0.85 * (1.0 - u_edgeBlur * 0.06);  // softer snap when edge blur high
+  m = mix(m, mSnap, videoEdge * uncertainty * max(0.0, snapStrength));
 
-  // ── Final feather ─────────────────────────────────────────────────────────
-  m = smoothstep(0.33, 0.67, m);
+  // ── Coverage (smoothstep) — configurable for softer transition ─────────────
+  m = smoothstep(u_coverage.x, u_coverage.y, m);
 
   vec4 bg = texture(u_bg, v_uv);
-  fragColor = mix(bg, vid, m);
+  vec4 base = mix(bg, vid, m);
+
+  // ── Light wrapping (image/upload bg only): bleed bg onto person at edge ────
+  if (u_hasImageBg == 1 && u_lightWrapping > 0.0) {
+    float edge = m * (1.0 - m);
+    vec4 wrap = u_lightWrapping * edge * bg;
+    if (u_blendMode == 0) {
+      base.rgb = 1.0 - (1.0 - base.rgb) * (1.0 - wrap.rgb);
+    } else {
+      base.rgb = min(vec3(1.0), base.rgb + wrap.rgb);
+    }
+  }
+  fragColor = base;
 }`;
 
 function compileShader(gl, src, type) {
@@ -213,6 +240,13 @@ function initWebGL(gl) {
     u_bg: gl.getUniformLocation(program, "u_bg"),
     u_mode: gl.getUniformLocation(program, "u_mode"),
     u_texelSize: gl.getUniformLocation(program, "u_texelSize"),
+    u_sigmaSpace: gl.getUniformLocation(program, "u_sigmaSpace"),
+    u_edgeBlur: gl.getUniformLocation(program, "u_edgeBlur"),
+    u_sigmaColor: gl.getUniformLocation(program, "u_sigmaColor"),
+    u_coverage: gl.getUniformLocation(program, "u_coverage"),
+    u_lightWrapping: gl.getUniformLocation(program, "u_lightWrapping"),
+    u_blendMode: gl.getUniformLocation(program, "u_blendMode"),
+    u_hasImageBg: gl.getUniformLocation(program, "u_hasImageBg"),
   };
   gl.uniform1i(uniforms.u_video, 0);
   gl.uniform1i(uniforms.u_mask, 1);
@@ -225,14 +259,27 @@ function initWebGL(gl) {
   return { program, vao, buf, textures: { video: videoTex, mask: maskTex, rawMask: rawMaskTex, bg: bgTex }, uniforms };
 }
 
+// ─── Default post-processing (soft edges preset) ───────────────
+const DEFAULT_POST_PROCESSING = {
+  sigmaSpace: 3,
+  edgeBlur: 0,
+  sigmaColor: 0.15,
+  coverageMin: 0.45,
+  coverageMax: 0.75,
+  lightWrapping: 0.25,
+  blendMode: "screen", // "screen" | "linearDodge"
+};
+
 // ─── WebGL background compositing with ML segmentation ────────
-function useBackgroundEffect(videoRef, canvasRef, selectedBg, segmenterRef, segmenterReady, uploadedImage, bgImagesRef) {
+function useBackgroundEffect(videoRef, canvasRef, selectedBg, segmenterRef, segmenterReady, uploadedImage, bgImagesRef, postProcessing = DEFAULT_POST_PROCESSING) {
   const selectedBgRef = useRef(selectedBg);
   const segmenterReadyRef = useRef(segmenterReady);
   const uploadedImageRef = useRef(uploadedImage);
+  const postProcessingRef = useRef(postProcessing);
   selectedBgRef.current = selectedBg;
   segmenterReadyRef.current = segmenterReady;
   uploadedImageRef.current = uploadedImage;
+  postProcessingRef.current = postProcessing;
 
   const rendererRef = useRef(null);
   const blurCanvasRef = useRef(null);
@@ -240,14 +287,10 @@ function useBackgroundEffect(videoRef, canvasRef, selectedBg, segmenterRef, segm
   const animFrameRef = useRef(null);
   const lastDimsRef = useRef({ w: 0, h: 0 });
   const lastBgKeyRef = useRef(null);
-  const frameCountRef = useRef(0);
   const maskAllocRef = useRef({ w: 0, h: 0 });
   const hasMaskRef = useRef(false);
   const segCanvasRef = useRef(null);
   const segCtxRef = useRef(null);
-  const blendMaskRef = useRef(null);
-  const avgFrameTimeRef = useRef(16);
-  const skipIntervalRef = useRef(1);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -303,77 +346,35 @@ function useBackgroundEffect(videoRef, canvasRef, selectedBg, segmenterRef, segm
         return;
       }
 
-      frameCountRef.current++;
-      const shouldSegment = frameCountRef.current % skipIntervalRef.current === 0;
+      // Segment every frame so mask matches video; skipping causes lag and thick boundary
+      segCtxRef.current.drawImage(video, 0, 0, SEG_WIDTH, SEG_HEIGHT);
 
-      if (shouldSegment) {
-        const segStart = performance.now();
+      let mask = null;
+      try {
+        const result = segmenterRef.current.segment(segCanvasRef.current);
+        if (result.confidenceMasks?.length > 0) {
+          mask = result.confidenceMasks[0].getAsFloat32Array();
+        }
+      } catch { /* fall through */ }
 
-        segCtxRef.current.drawImage(video, 0, 0, SEG_WIDTH, SEG_HEIGHT);
-
-        let mask = null;
-        try {
-          const result = segmenterRef.current.segment(segCanvasRef.current);
-          if (result.confidenceMasks?.length > 0) {
-            mask = result.confidenceMasks[0].getAsFloat32Array();
-          }
-        } catch { /* fall through */ }
-
-        if (mask) {
-          gl.activeTexture(gl.TEXTURE3);
-          gl.bindTexture(gl.TEXTURE_2D, r.textures.rawMask);
-          if (maskAllocRef.current.w !== SEG_WIDTH || maskAllocRef.current.h !== SEG_HEIGHT) {
-            gl.texImage2D(gl.TEXTURE_2D, 0, gl.R32F, SEG_WIDTH, SEG_HEIGHT, 0, gl.RED, gl.FLOAT, mask);
-          } else {
-            gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, SEG_WIDTH, SEG_HEIGHT, gl.RED, gl.FLOAT, mask);
-          }
-
-          const prev = blendMaskRef.current;
-          const hasPrev = prev && prev.length === mask.length;
-          if (!hasPrev) {
-            blendMaskRef.current = new Float32Array(mask);
-          } else {
-            // Estimate how much the mask changed between frames (coarse sample for speed)
-            let diff = 0;
-            const stride = 16;
-            const sampleCount = mask.length / stride;
-            for (let i = 0; i < mask.length; i += stride) {
-              diff += Math.abs(mask[i] - prev[i]);
-            }
-            diff /= sampleCount;
-
-            // Motion-aware alpha:
-            // - higher when motion is large (so the boundary keeps up with the subject)
-            // - lower when almost static (to keep things stable and denoised)
-            const motion = Math.max(0, Math.min(1, diff * 8.0));
-            const baseAlpha = 0.25;
-            const globalAlpha = baseAlpha + motion * 0.55; // 0.25 → 0.80
-
-            const blend = blendMaskRef.current;
-            for (let i = 0; i < mask.length; i++) {
-              const curr = mask[i];
-              const uncertainty = 1.0 - Math.abs(curr * 2.0 - 1.0);
-              const confidence = 1.0 - uncertainty;
-              const localAlpha = Math.max(0, Math.min(1, globalAlpha + confidence * 0.15));
-              blend[i] = curr * localAlpha + blend[i] * (1.0 - localAlpha);
-            }
-          }
-
-          gl.activeTexture(gl.TEXTURE1);
-          gl.bindTexture(gl.TEXTURE_2D, r.textures.mask);
-          if (maskAllocRef.current.w !== SEG_WIDTH || maskAllocRef.current.h !== SEG_HEIGHT) {
-            gl.texImage2D(gl.TEXTURE_2D, 0, gl.R32F, SEG_WIDTH, SEG_HEIGHT, 0, gl.RED, gl.FLOAT, blendMaskRef.current);
-            maskAllocRef.current = { w: SEG_WIDTH, h: SEG_HEIGHT };
-          } else {
-            gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, SEG_WIDTH, SEG_HEIGHT, gl.RED, gl.FLOAT, blendMaskRef.current);
-          }
-          hasMaskRef.current = true;
+      if (mask) {
+        gl.activeTexture(gl.TEXTURE3);
+        gl.bindTexture(gl.TEXTURE_2D, r.textures.rawMask);
+        if (maskAllocRef.current.w !== SEG_WIDTH || maskAllocRef.current.h !== SEG_HEIGHT) {
+          gl.texImage2D(gl.TEXTURE_2D, 0, gl.R32F, SEG_WIDTH, SEG_HEIGHT, 0, gl.RED, gl.FLOAT, mask);
+        } else {
+          gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, SEG_WIDTH, SEG_HEIGHT, gl.RED, gl.FLOAT, mask);
         }
 
-        const segTime = performance.now() - segStart;
-        avgFrameTimeRef.current = avgFrameTimeRef.current * 0.9 + segTime * 0.1;
-        // Always segment every frame for minimal temporal lag at the subject boundary
-        skipIntervalRef.current = 1;
+        gl.activeTexture(gl.TEXTURE1);
+        gl.bindTexture(gl.TEXTURE_2D, r.textures.mask);
+        if (maskAllocRef.current.w !== SEG_WIDTH || maskAllocRef.current.h !== SEG_HEIGHT) {
+          gl.texImage2D(gl.TEXTURE_2D, 0, gl.R32F, SEG_WIDTH, SEG_HEIGHT, 0, gl.RED, gl.FLOAT, mask);
+          maskAllocRef.current = { w: SEG_WIDTH, h: SEG_HEIGHT };
+        } else {
+          gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, SEG_WIDTH, SEG_HEIGHT, gl.RED, gl.FLOAT, mask);
+        }
+        hasMaskRef.current = true;
       }
 
       if (!hasMaskRef.current) {
@@ -412,6 +413,16 @@ function useBackgroundEffect(videoRef, canvasRef, selectedBg, segmenterRef, segm
         }
       }
 
+      const pp = postProcessingRef.current || DEFAULT_POST_PROCESSING;
+      const hasImageBg = (bg?.type === "image" || bg?.type === "upload") ? 1 : 0;
+      gl.uniform1f(r.uniforms.u_sigmaSpace, pp.sigmaSpace);
+      gl.uniform1f(r.uniforms.u_edgeBlur, pp.edgeBlur ?? 0);
+      gl.uniform1f(r.uniforms.u_sigmaColor, pp.sigmaColor);
+      gl.uniform2f(r.uniforms.u_coverage, pp.coverageMin, pp.coverageMax);
+      gl.uniform1f(r.uniforms.u_lightWrapping, pp.lightWrapping);
+      gl.uniform1i(r.uniforms.u_blendMode, pp.blendMode === "linearDodge" ? 1 : 0);
+      gl.uniform1i(r.uniforms.u_hasImageBg, hasImageBg);
+
       gl.useProgram(r.program);
       gl.uniform1i(r.uniforms.u_mode, 1);
       gl.bindVertexArray(r.vao);
@@ -437,7 +448,7 @@ function useBackgroundEffect(videoRef, canvasRef, selectedBg, segmenterRef, segm
 
 // ─── Shared Components ────────────────────────────────────────
 
-function Logo({ onClick }) {
+function Logo({ onClick, compact, label }) {
   return (
     <div className="logo" style={{ ...styles.logo, ...(onClick ? { cursor: "pointer" } : {}) }} onClick={onClick}>
       <div style={styles.logoIcon}>
@@ -446,7 +457,7 @@ function Logo({ onClick }) {
           <rect x="1" y="5" width="15" height="14" rx="2" ry="2" />
         </svg>
       </div>
-      <span style={styles.logoText}>VideoVoice</span>
+      {!compact && <span style={styles.logoText}>{label ?? "VideoVoice"}</span>}
     </div>
   );
 }
@@ -546,10 +557,34 @@ function RecordScreen({ onNext, onBack }) {
   const [cameraReady, setCameraReady] = useState(false);
   const [cameraError, setCameraError] = useState(null);
   const [uploadedImage, setUploadedImage] = useState(null);
+  const POST_PROCESSING_KEY = "videoVoiceApp_edgeSmoothness";
+  const loadSavedPostProcessing = () => {
+    try {
+      const s = localStorage.getItem(POST_PROCESSING_KEY);
+      if (s) {
+        const parsed = JSON.parse(s);
+        return { ...DEFAULT_POST_PROCESSING, ...parsed };
+      }
+    } catch (_) {}
+    return { ...DEFAULT_POST_PROCESSING };
+  };
+  const [postProcessing, setPostProcessing] = useState(loadSavedPostProcessing);
+  const [postProcessVisible, setPostProcessVisible] = useState(true);
+  const [postProcessAnimatingOut, setPostProcessAnimatingOut] = useState(false);
+
+  const handlePostProcessHide = () => {
+    setPostProcessAnimatingOut(true);
+  };
+  const handlePostProcessAnimEnd = (e) => {
+    if (e.animationName === "edgePanelSlideOut") {
+      setPostProcessVisible(false);
+      setPostProcessAnimatingOut(false);
+    }
+  };
 
   const bgImagesRef = useRef({});
   const { segmenterRef, segmenterReady, segmenterError } = useSegmenter();
-  useBackgroundEffect(videoRef, canvasRef, selectedBg, segmenterRef, segmenterReady, uploadedImage, bgImagesRef);
+  useBackgroundEffect(videoRef, canvasRef, selectedBg, segmenterRef, segmenterReady, uploadedImage, bgImagesRef, postProcessing);
 
   useEffect(() => {
     BACKGROUNDS.filter((bg) => bg.type === "image" && bg.src).forEach((bg) => {
@@ -735,20 +770,6 @@ function RecordScreen({ onNext, onBack }) {
           </div>
         )}
 
-        {/* ── Film set HUD (setup phase) */}
-        {phase === "setup" && (
-          <div style={styles.filmHUD} className="anim-fade-in">
-            <div style={styles.filmHUDLeft}>
-              <Logo onClick={onBack} />
-            </div>
-            <div style={styles.standbyBadge}>
-              <span style={styles.standbyDot} className="standby-dot" />
-              STANDBY
-            </div>
-            <span style={styles.filmReadout}>29.97 fps<br />1280×720</span>
-          </div>
-        )}
-
         {/* Viewfinder corners */}
         {phase === "setup" && cameraReady && (
           <>
@@ -759,6 +780,140 @@ function RecordScreen({ onNext, onBack }) {
           </>
         )}
       </div>
+
+      {/* Film HUD (setup) — back button & Edge toggle at top */}
+      {phase === "setup" && (
+        <div style={styles.filmHUD} className="anim-fade-in">
+          <div style={styles.filmHUDLeft}>
+            <Logo onClick={onBack} />
+          </div>
+          <div style={styles.standbyBadge}>
+            <span style={styles.standbyDot} className="standby-dot" />
+            STANDBY
+          </div>
+          <div style={styles.filmHUDRight}>
+            <span style={styles.filmReadout}>29.97 fps<br />1280×720</span>
+          </div>
+        </div>
+      )}
+
+      {/* Edge toggle — centered on right side */}
+      {phase === "setup" && selectedBg !== "none" && (
+        <button
+          type="button"
+          onClick={postProcessVisible || postProcessAnimatingOut ? handlePostProcessHide : () => setPostProcessVisible(true)}
+          style={styles.postProcessFloatingBtn}
+          className="post-process-floating-btn"
+          aria-label={postProcessVisible || postProcessAnimatingOut ? "Hide Edge Smoothness" : "Show Edge Smoothness"}
+          disabled={postProcessAnimatingOut}
+        >
+          {postProcessVisible || postProcessAnimatingOut ? (
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 18l6-6-6-6" /></svg>
+          ) : (
+            <>
+              <span className="magic-wand-icon">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M12 5v14M5 12h14" />
+                </svg>
+              </span>
+              <span>Edge</span>
+            </>
+          )}
+        </button>
+      )}
+
+      {/* Edge Smoothness — right side of screen */}
+      {phase === "setup" && selectedBg !== "none" && (postProcessVisible || postProcessAnimatingOut) && (
+            <div style={styles.postProcessCardOuter} className="post-process-card">
+              <div
+                style={styles.postProcessCardInner}
+                className={`post-process-card-inner ${postProcessAnimatingOut ? "post-process-card--animating-out" : "anim-slide-up"}`}
+                onAnimationEnd={handlePostProcessAnimEnd}
+              >
+              <div style={styles.postProcessHeader}>
+                <p style={styles.postProcessTitle}>Edge Smoothness</p>
+              </div>
+              <div style={styles.postProcessGrid} className="post-process-grid">
+            <div style={styles.postProcessRow}>
+              <label style={styles.postProcessLabel}>Sigma space</label>
+              <input
+                type="range"
+                min="0.5"
+                max="6"
+                step="0.25"
+                value={postProcessing.sigmaSpace}
+                onChange={(e) => setPostProcessing((p) => ({ ...p, sigmaSpace: +e.target.value }))}
+                style={styles.slider}
+              />
+              <span style={styles.postProcessValue}>{postProcessing.sigmaSpace}</span>
+            </div>
+            <div style={styles.postProcessRow}>
+              <label style={styles.postProcessLabel}>Edge blur</label>
+              <input
+                type="range"
+                min="0"
+                max="8"
+                step="0.5"
+                value={postProcessing.edgeBlur ?? 0}
+                onChange={(e) => setPostProcessing((p) => ({ ...p, edgeBlur: +e.target.value }))}
+                style={styles.slider}
+              />
+              <span style={styles.postProcessValue}>{(postProcessing.edgeBlur ?? 0).toFixed(1)}</span>
+            </div>
+            <div style={styles.postProcessRow}>
+              <label style={styles.postProcessLabel}>Sigma color</label>
+              <input
+                type="range"
+                min="0.02"
+                max="0.5"
+                step="0.01"
+                value={postProcessing.sigmaColor}
+                onChange={(e) => setPostProcessing((p) => ({ ...p, sigmaColor: +e.target.value }))}
+                style={styles.slider}
+              />
+              <span style={styles.postProcessValue}>{postProcessing.sigmaColor.toFixed(2)}</span>
+            </div>
+            <div style={styles.postProcessRow}>
+              <label style={styles.postProcessLabel}>Coverage</label>
+              <input
+                type="range"
+                min="0"
+                max="1"
+                step="0.05"
+                value={(postProcessing.coverageMin - 0.4) / 0.2}
+                onChange={(e) => {
+                  const t = +e.target.value;
+                  setPostProcessing((p) => ({
+                    ...p,
+                    coverageMin: 0.4 + t * 0.2,
+                    coverageMax: 0.6 + t * 0.3,
+                  }));
+                }}
+                style={styles.slider}
+              />
+              <span style={{ ...styles.postProcessValue, whiteSpace: "nowrap" }}>{postProcessing.coverageMin.toFixed(2)} · {postProcessing.coverageMax.toFixed(2)}</span>
+            </div>
+            <div style={styles.postProcessRow}>
+              <label style={styles.postProcessLabel}>Light wrapping</label>
+              <input
+                type="range"
+                min="0"
+                max="0.6"
+                step="0.05"
+                value={postProcessing.lightWrapping}
+                onChange={(e) => setPostProcessing((p) => ({ ...p, lightWrapping: +e.target.value }))}
+                style={styles.slider}
+              />
+              <span style={styles.postProcessValue}>{postProcessing.lightWrapping.toFixed(2)}</span>
+            </div>
+          </div>
+              <div style={styles.postProcessActions} className="post-process-actions">
+                <button type="button" onClick={() => setPostProcessing({ ...DEFAULT_POST_PROCESSING })} style={styles.postProcessActionBtn}>Default</button>
+                <button type="button" onClick={() => { localStorage.setItem(POST_PROCESSING_KEY, JSON.stringify(postProcessing)); }} style={styles.postProcessActionBtn}>Save</button>
+              </div>
+              </div>
+            </div>
+      )}
 
       {/* Bottom panel */}
       <div style={styles.bottomPanel} className="bottom-panel">
@@ -776,40 +931,40 @@ function RecordScreen({ onNext, onBack }) {
             </div>
             <div style={styles.bgThumbs} className="bg-thumbs">
               {BACKGROUNDS.map((bg) => (
-                <button
-                  key={bg.id}
-                  onClick={() => {
-                    if (bg.type === "upload") {
-                      fileInputRef.current?.click();
-                    } else {
-                      setSelectedBg(bg.id);
-                    }
-                  }}
-                  style={{
-                    ...styles.bgThumb,
-                    background: bg.id === "upload" && uploadedImage
-                      ? `url(${uploadedImage.src}) center/cover`
-                      : bg.type === "image" && bg.src
-                      ? `url(${bg.src}) center/cover`
-                      : bg.preview,
-                    ...(selectedBg === bg.id ? styles.bgThumbActive : {}),
-                  }}
-                  className="bg-thumb"
-                  title={bg.label}
-                >
-                  {bg.type === "none" && (
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.5)" strokeWidth="2.5" strokeLinecap="round">
-                      <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
-                    </svg>
-                  )}
-                  {bg.type === "upload" && !uploadedImage && (
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.6)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
-                    </svg>
-                  )}
-                  <span style={styles.bgThumbLabel}>{bg.label}</span>
-                </button>
-              ))}
+                  <button
+                    key={bg.id}
+                    onClick={() => {
+                      if (bg.type === "upload") {
+                        fileInputRef.current?.click();
+                      } else {
+                        setSelectedBg(bg.id);
+                      }
+                    }}
+                    style={{
+                      ...styles.bgThumb,
+                      background: bg.id === "upload" && uploadedImage
+                        ? `url(${uploadedImage.src}) center/cover`
+                        : bg.type === "image" && bg.src
+                        ? `url(${bg.src}) center/cover`
+                        : bg.preview,
+                      ...(selectedBg === bg.id ? styles.bgThumbActive : {}),
+                    }}
+                    className="bg-thumb"
+                    title={bg.label}
+                  >
+                    {bg.type === "none" && (
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.5)" strokeWidth="2.5" strokeLinecap="round">
+                        <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+                      </svg>
+                    )}
+                    {bg.type === "upload" && !uploadedImage && (
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.6)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
+                      </svg>
+                    )}
+                    <span style={styles.bgThumbLabel}>{bg.label}</span>
+                  </button>
+                ))}
             </div>
             <input
               ref={fileInputRef}
@@ -821,7 +976,7 @@ function RecordScreen({ onNext, onBack }) {
           </div>
         )}
 
-        {/* Controls row */}
+        {/* Controls row — record button (always centered) + Edge Smoothness (absolutely positioned) */}
         <div style={styles.controlsRow} className="controls-row">
           {phase === "setup" && (
             <button
@@ -869,6 +1024,7 @@ function RecordScreen({ onNext, onBack }) {
           </p>
         )}
       </div>
+
     </div>
   );
 }
@@ -1464,7 +1620,7 @@ const styles = {
 
   // ── Film set HUD
   filmHUD: {
-    position: "absolute", top: 0, left: 0, right: 0, zIndex: 20,
+    position: "absolute", top: 0, left: 0, right: 0, zIndex: 25,
     display: "flex", alignItems: "flex-start", justifyContent: "space-between",
     padding: "12px 14px",
     background: "linear-gradient(to bottom, rgba(0,0,0,0.7) 0%, transparent 100%)",
@@ -1486,6 +1642,9 @@ const styles = {
   standbyDot: {
     width: 6, height: 6, borderRadius: "50%",
     background: "#ffb300", flexShrink: 0,
+  },
+  filmHUDRight: {
+    display: "flex", alignItems: "center", gap: 10,
   },
   filmReadout: {
     fontSize: 9, fontWeight: 700,
@@ -1564,6 +1723,82 @@ const styles = {
     textShadow: "0 1px 2px rgba(0,0,0,0.8)",
   },
 
+  // ── Post-processing (edge smoothness) — right side of screen
+  postProcessCardOuter: {
+    position: "absolute",
+    right: 16,
+    top: "50%",
+    transform: "translateY(-50%)",
+    width: 300,
+    zIndex: 15,
+  },
+  postProcessFloatingBtn: {
+    position: "absolute", right: 16, top: "50%", transform: "translateY(-50%)",
+    display: "flex", alignItems: "center", gap: 5,
+    padding: "8px 12px",
+    background: "linear-gradient(135deg, #c2185b, #7b1a5e)", border: "1.5px solid rgba(194,24,91,0.45)",
+    borderRadius: 10, color: "#fff", fontSize: 12, fontWeight: 600,
+    cursor: "pointer", zIndex: 16, backdropFilter: "blur(10px)",
+    boxShadow: "0 0 12px rgba(194,24,91,0.2)",
+  },
+  postProcessCardInner: {
+    padding: "12px 10px",
+    borderRadius: 12,
+    background: "rgba(0,0,0,0.6)",
+    border: "1px solid rgba(255,255,255,0.12)",
+    backdropFilter: "blur(10px)",
+    width: "100%",
+    boxSizing: "border-box",
+  },
+  postProcessHeader: {
+    marginBottom: 12,
+  },
+  postProcessTitle: {
+    fontSize: 10, fontWeight: 700,
+    color: "rgba(255,255,255,0.6)",
+    margin: 0,
+    letterSpacing: "0.1em", textTransform: "uppercase",
+  },
+  postProcessActions: {
+    display: "flex", gap: 6, marginTop: 14, paddingTop: 12, borderTop: "1px solid rgba(255,255,255,0.1)",
+  },
+  postProcessActionBtn: {
+    flex: 1, padding: "8px 10px", fontSize: 11, fontWeight: 600,
+    background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.2)",
+    borderRadius: 8, color: "#fff", cursor: "pointer",
+  },
+  postProcessGrid: {
+    display: "flex", flexDirection: "column", gap: 12,
+  },
+  postProcessRow: {
+    display: "flex", alignItems: "center", gap: 6,
+  },
+  postProcessLabel: {
+    fontSize: 11, color: "rgba(255,255,255,0.7)",
+    width: 76, minWidth: 76, flexShrink: 0, whiteSpace: "nowrap",
+  },
+  postProcessValue: {
+    fontSize: 10, color: "rgba(255,255,255,0.45)",
+    fontFamily: "'Space Mono', monospace",
+    width: 72, minWidth: 72, flexShrink: 0, textAlign: "right",
+  },
+  slider: {
+    flex: 1, minWidth: 0, maxWidth: 120,
+    accentColor: "rgba(194,24,91,0.8)",
+    height: 12, cursor: "pointer",
+  },
+  select: {
+    flex: 1, minWidth: 0,
+    padding: "8px 8px",
+    fontSize: 12,
+    background: "#2a2738",
+    border: "1px solid rgba(255,255,255,0.25)",
+    borderRadius: 8,
+    color: "#fff",
+    cursor: "pointer",
+    fontWeight: 500,
+  },
+
   // ── Controls row
   controlsRow: {
     display: "flex", justifyContent: "center", alignItems: "center",
@@ -1571,14 +1806,16 @@ const styles = {
   },
   recordBtn: {
     width: 76, height: 76, borderRadius: "50%",
-    background: "rgba(255,255,255,0.06)",
+    background: "linear-gradient(145deg, rgba(20,20,35,0.85) 0%, rgba(35,18,55,0.9) 100%)",
     border: "4px solid rgba(255,255,255,0.7)",
+    boxShadow: "0 4px 20px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.08)",
     display: "flex", alignItems: "center", justifyContent: "center",
     cursor: "pointer", padding: 0, transition: "all 0.15s",
   },
   recordBtnActive: {
     border: "4px solid #e53935",
-    background: "rgba(229,57,53,0.08)",
+    background: "linear-gradient(145deg, rgba(180,25,60,0.35) 0%, rgba(35,18,55,0.9) 100%)",
+    boxShadow: "0 4px 24px rgba(229,57,53,0.35), inset 0 1px 0 rgba(255,255,255,0.1)",
     animation: "recordPulse 2s ease-in-out infinite",
   },
   recordDot: {
@@ -1779,6 +2016,10 @@ if (typeof document !== "undefined") {
     @keyframes recordPulse { 0%,100%{box-shadow:0 0 0 0 rgba(229,57,53,0)} 50%{box-shadow:0 0 0 12px rgba(229,57,53,0.15)} }
     @keyframes camGlow { 0%,100%{box-shadow:0 4px 20px rgba(194,24,91,0.35),0 0 0 0 rgba(194,24,91,0)} 50%{box-shadow:0 8px 40px rgba(194,24,91,0.65),0 0 0 14px rgba(194,24,91,0)} }
     @keyframes standbyPulse { 0%,100%{opacity:1} 50%{opacity:0.2} }
+    @keyframes edgePanelSlideOut { from{opacity:1;transform:translateX(0)} to{opacity:0;transform:translateX(20px)} }
+    @keyframes magicWandShine { 0%,100%{opacity:1;filter:drop-shadow(0 0 2px rgba(194,24,91,0.4))} 50%{opacity:0.9;filter:drop-shadow(0 0 6px rgba(194,24,91,0.7))} }
+    @keyframes magicWandFloat { 0%,100%{transform:translateY(0) rotate(-2deg)} 50%{transform:translateY(-2px) rotate(2deg)} }
+    @keyframes edgeBtnBgPulse { 0%,100%{background-position:0% 50%;box-shadow:0 0 12px rgba(194,24,91,0.2)} 50%{background-position:100% 50%;box-shadow:0 0 20px rgba(194,24,91,0.4)} }
 
     /* ── Animation utility classes ────────────────────────────── */
     .anim-fade-in   { animation: fadeIn    0.5s ease both; }
@@ -1839,6 +2080,24 @@ if (typeof document !== "undefined") {
     /* ── Form focus ──────────────────────────────────────────── */
     .email-input::placeholder { color:rgba(255,255,255,0.22); }
     .email-input:focus { background:rgba(255,255,255,0.09) !important; outline:none; }
+
+    /* ── Blend mode select (readable dropdown) ───────────────── */
+    .post-process-card select { color:#fff !important; }
+    .post-process-card select option { background:#2a2738; color:#fff; }
+
+    /* ── Edge panel hide animation ──────────────────────────── */
+    .post-process-card--animating-out { animation: edgePanelSlideOut 0.3s ease forwards !important; pointer-events: none; }
+
+    /* ── Magic wand icon animation ──────────────────────────── */
+    .magic-wand-icon { display: inline-flex; animation: magicWandFloat 3s ease-in-out infinite; }
+    .magic-wand-icon svg { animation: magicWandShine 2s ease-in-out infinite; }
+
+    /* ── Edge button background animation ───────────────────── */
+    .post-process-floating-btn {
+      background: linear-gradient(270deg, #c2185b, #7b1a5e, #c2185b) !important;
+      background-size: 200% 100% !important;
+      animation: edgeBtnBgPulse 3s ease-in-out infinite !important;
+    }
 
     /* ── Scrollbar hide ──────────────────────────────────────── */
     .bg-thumbs::-webkit-scrollbar { display:none; }

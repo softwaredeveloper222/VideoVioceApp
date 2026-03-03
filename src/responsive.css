@@ -1,5 +1,10 @@
 /* ─── Mobile Responsive ──────────────────────────────────── */
 
+/* Edge panel — gap from floating button (all breakpoints) */
+.post-process-card {
+  margin-right: 80px !important;
+}
+
 /* Tablet */
 @media (max-width: 768px) {
   .gradient-screen {
@@ -21,6 +26,37 @@
   .bg-thumb {
     width: 56px !important;
     height: 40px !important;
+  }
+
+  /* Edge Smoothness — tablet responsive */
+  .post-process-card {
+    left: 50% !important;
+    right: auto !important;
+    transform: translate(-50%, -50%) !important;
+    width: min(300px, calc(100vw - 32px)) !important;
+    margin-right: 80px !important;
+  }
+
+  .post-process-card-inner {
+    padding: 10px 12px !important;
+  }
+
+  .post-process-card label {
+    width: 72px !important;
+    min-width: 72px !important;
+    font-size: 10px !important;
+  }
+
+  .post-process-card .post-process-grid > div > span {
+    width: 78px !important;
+    min-width: 78px !important;
+    font-size: 9px !important;
+  }
+
+  .post-process-floating-btn {
+    right: 12px !important;
+    padding: 6px 10px !important;
+    font-size: 11px !important;
   }
 }
 
@@ -68,6 +104,7 @@
     border-radius: 6px !important;
   }
 
+
   .record-btn {
     width: 64px !important;
     height: 64px !important;
@@ -100,6 +137,53 @@
     text-align: center;
     justify-content: center;
   }
+
+  /* Edge Smoothness — phone responsive: fit width, touch-friendly, above bottom panel */
+  .post-process-card {
+    left: 50% !important;
+    right: auto !important;
+    top: auto !important;
+    bottom: 320px !important;
+    transform: translateX(-50%) !important;
+    width: min(300px, calc(100vw - 112px)) !important;
+    margin-right: 80px !important;
+  }
+
+  .post-process-card-inner {
+    padding: 10px 12px !important;
+  }
+
+  .post-process-grid {
+    gap: 10px !important;
+  }
+
+  .post-process-card label {
+    width: 68px !important;
+    min-width: 68px !important;
+    font-size: 10px !important;
+  }
+
+  .post-process-card .post-process-grid > div > span {
+    width: 72px !important;
+    min-width: 72px !important;
+    font-size: 9px !important;
+  }
+
+  .post-process-card input[type="range"] {
+    min-height: 32px !important;
+  }
+
+  .post-process-card .post-process-actions button {
+    min-height: 40px !important;
+    padding: 10px 12px !important;
+    font-size: 11px !important;
+  }
+
+  .post-process-floating-btn {
+    right: 12px !important;
+    padding: 8px 10px !important;
+    font-size: 11px !important;
+  }
 }
 
 /* Touch devices */
@@ -107,7 +191,11 @@
   .outline-btn,
   .filled-btn,
   .record-btn,
-  .bg-thumb {
+  .bg-thumb,
+  .post-process-card input[type="range"],
+  .post-process-card select,
+  .post-process-card button,
+  .post-process-floating-btn {
     -webkit-tap-highlight-color: transparent;
   }
 
