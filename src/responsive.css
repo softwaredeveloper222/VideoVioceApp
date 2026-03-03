@@ -138,15 +138,15 @@
     justify-content: center;
   }
 
-  /* Edge Smoothness — phone responsive: fit width, touch-friendly, above bottom panel */
+  /* Edge Smoothness — phone responsive: centered on screen, slightly left */
   .post-process-card {
     left: 50% !important;
     right: auto !important;
-    top: auto !important;
-    bottom: 320px !important;
-    transform: translateX(-50%) !important;
-    width: min(300px, calc(100vw - 112px)) !important;
-    margin-right: 80px !important;
+    top: 50% !important;
+    bottom: auto !important;
+    transform: translate(calc(-50% - 20px), -50%) !important;
+    width: min(300px, calc(100vw - 32px)) !important;
+    margin-right: 0 !important;
   }
 
   .post-process-card-inner {
