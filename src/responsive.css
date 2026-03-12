@@ -187,11 +187,11 @@
   .outline-btn,
   .filled-btn {
     min-width: 0 !important;
-    width: calc(100% - 48px) !important;
+    width: calc(100% - 84px) !important;
     max-width: 320px !important;
     padding: 14px 24px !important;
     font-size: 13px !important;
-    letter-spacing: 0.14em !important;
+    letter-spacing: 0.03em !important;
     min-height: 48px !important;
     box-sizing: border-box !important;
   }

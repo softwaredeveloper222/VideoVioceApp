@@ -780,6 +780,7 @@ export default function RecordScreen({ onNext }) {
               <button
                 onClick={() => {
                   try { localStorage.setItem(POST_PROCESSING_KEY, JSON.stringify(postProcessing)); } catch (_) {}
+                  setPostProcessAnimatingOut(true);
                 }}
                 style={{
                   flex: 1, padding: "6px 0", fontSize: 11, fontFamily: "'CiscoSansTT', sans-serif",
