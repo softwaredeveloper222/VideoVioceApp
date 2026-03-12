@@ -935,22 +935,22 @@ if (typeof document !== "undefined") {
     /* ── Scrollbar hide ──────────────────────────────────────── */
     .bg-thumbs::-webkit-scrollbar { display:none; }
 
-    /* ── Responsive ──────────────────────────────────────────── */
+    // /* ── Responsive ──────────────────────────────────────────── */
 
-    /* Mobile — keep layout comfortable */
-    @media (max-width: 480px) {
-      .welcome-heading { font-size: 34px !important; }
-    }
+    // /* Mobile — keep layout comfortable */
+    // @media (max-width: 480px) {
+    //   .welcome-heading { font-size: 36px !important; }
+    // }
 
-    /* Tablet — show hero right column */
-    @media (min-width: 768px) {
-      .hero-right { display: block !important; }
-    }
+    // /* Tablet — show hero right column */
+    // @media (min-width: 768px) {
+    //   .hero-right { display: block !important; }
+    // }
 
-    /* Desktop — larger headings */
-    @media (min-width: 1024px) {
-      .welcome-heading { font-size: 56px !important; }
-    }
+    // /* Desktop — larger headings */
+    // @media (min-width: 1024px) {
+    //   .welcome-heading { font-size: 56px !important; }
+    // }
   `;
   document.head.appendChild(el);
 }

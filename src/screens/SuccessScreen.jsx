@@ -6,8 +6,8 @@ export default function SuccessScreen({ onReset }) {
       <div style={styles.welcomeCenter} className="welcome-center">
         {/* Cisco logo */}
         <img
-          src="/img/CISCO.png"
-          srcSet="/img/CISCO@2x.png 2x"
+          src="/img/CISCO@Desktop.png"
+          srcSet="/img/CISCO@Desktop.png 2x"
           alt="Cisco"
           className="anim-fade-in intro-cisco-logo"
           style={{ height: 36, objectFit: "contain", marginBottom: 48 }}
@@ -18,7 +18,7 @@ export default function SuccessScreen({ onReset }) {
           src="/img/LWYW_brand_square.png"
           alt="LWYW"
           className="anim-scale-in d2 intro-lwyw-brand success-lwyw-brand"
-          style={{ width: "min(440px, 65vw)", objectFit: "contain", marginBottom: 80 }}
+          style={{ width: "min(380px, 50vw)", objectFit: "contain", marginBottom: 80 }}
         />
 
         {/* Thank you heading */}
@@ -42,9 +42,10 @@ export default function SuccessScreen({ onReset }) {
         <p
           className="anim-slide-up d3 success-subtext"
           style={{
-            fontSize: 16,
-            color: "rgba(255,255,255,0.7)",
-            lineHeight: 1.6,
+            fontSize: 18,
+            fontFamily: "'Barlow', sans-serif",
+            color: "rgba(255,255,255,1.0)",
+            lineHeight: 1.4,
             textAlign: "center",
             maxWidth: 320,
             margin: 0,

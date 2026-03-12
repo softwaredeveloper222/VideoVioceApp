@@ -5,8 +5,8 @@ export default function QuestionScreen({ onStart }) {
     <div style={styles.bgImageScreen} className="gradient-screen">
       <div style={styles.welcomeCenter} className="welcome-center">
         <img
-          src="/img/CISCO.png"
-          srcSet="/img/CISCO@2x.png 2x"
+          src="/img/CISCO@Desktop.png"
+          srcSet="/img/CISCO@Desktop.png 2x"
           alt="Cisco"
           className="anim-fade-in question-cisco-logo"
           style={{ height: 36, objectFit: "contain", marginBottom: 120 }}
@@ -18,7 +18,7 @@ export default function QuestionScreen({ onStart }) {
           style={{ height: 40, objectFit: "contain", marginBottom: 120 }}
         />
         <h1 className="anim-slide-up d2 welcome-heading question-heading" style={{
-          fontSize: 55, fontWeight: 300, color: "#fff",
+          fontSize: 52, fontWeight: 300, color: "#fff",
           textAlign: "center", lineHeight: 1.3,
           letterSpacing: "-0.01em", margin: "0 0 0",
           maxWidth: 420, padding: "0 20px",

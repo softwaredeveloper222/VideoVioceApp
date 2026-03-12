@@ -19,8 +19,8 @@ export default function EmailScreen({ onNext, error: serverError }) {
       <div style={styles.welcomeCenter} className="welcome-center">
         {/* Cisco logo */}
         <img
-          src="/img/CISCO.png"
-          srcSet="/img/CISCO@2x.png 2x"
+          src="/img/CISCO@Desktop.png"
+          srcSet="/img/CISCO@Desktop.png 2x"
           alt="Cisco"
           className="anim-fade-in email-cisco-logo"
           style={{ height: 36, objectFit: "contain", marginBottom: 120 }}
