@@ -27,17 +27,17 @@ export default function IntroScreen({ onNext }) {
           />
         </picture>
         <p className="anim-slide-up d3 intro-hashtags" style={{
-          fontSize: 20, fontWeight: 200, color: "#ffffff",
+          fontSize: 24, fontWeight: 200, color: "#ffffff",
           textAlign: "center", lineHeight: 1, margin: "0 0 16px",
         }}>
           #WeAreCisco<br />#LoveWhereYouWork
         </p>
         {/* <div className="intro-btn-spacer" style={{ flex: 1, minHeight: 18 }} /> */}
         <p className="anim-slide-up d4 intro-description" style={{
-          fontSize: 19, fontWeight: 100, color: "rgba(255,255,255,1.0)",
+          fontSize: 24, fontWeight: 100, color: "rgba(255,255,255,1.0)",
           fontFamily: "'Barlow', sans-serif",
           textAlign: "center", lineHeight: 1.3, margin: "16px 0 0",
-          maxWidth: 320, padding: "0 20px",
+          maxWidth: 390, padding: "0 20px",
         }}>
           Share the love! Record a quick video about why this is your place.
         </p>

@@ -34,7 +34,7 @@ export default function SuccessScreen({ onReset }) {
         <h1
           className="anim-slide-up d2 success-title"
           style={{
-            fontSize: 44,
+            fontSize: 64,
             fontWeight: 300,
             color: "#fff",
             textAlign: "center",
@@ -51,14 +51,14 @@ export default function SuccessScreen({ onReset }) {
         <p
           className="anim-slide-up d3 success-subtext"
           style={{
-            fontSize: 18,
+            fontSize: 26,
             fontFamily: "'Barlow', sans-serif",
             color: "rgba(255,255,255,1.0)",
             lineHeight: 1.4,
             textAlign: "center",
-            maxWidth: 320,
+            maxWidth: 420,
             margin: 0,
-            padding: "0 20px",
+            fontWeight: 100,
           }}
         >
           Please keep an eye on your email —
