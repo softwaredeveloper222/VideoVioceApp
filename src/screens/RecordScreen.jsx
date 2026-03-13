@@ -10,6 +10,7 @@ const SEG_HEIGHT = 144;
 
 const BACKGROUNDS = [
   { id: "none", label: "None", type: "none", preview: "#ffffff" },
+  { id: "custom", label: "LWYW", type: "image", src: "/backgrounds/custom.png", preview: "linear-gradient(135deg, #c8956a, #f0ebe0)", crop: { top: 0, height: 0.47 } },
   { id: "living-room", label: "Living Room", type: "image", src: "/backgrounds/living-room.jpg", preview: "linear-gradient(135deg, #c8956a, #f0ebe0)" },
   { id: "home-office", label: "Home Office", type: "image", src: "/backgrounds/home-office.jpg", preview: "linear-gradient(135deg, #7a9ab0, #e8ecf0)" },
   { id: "library", label: "Library", type: "image", src: "/backgrounds/library.jpg", preview: "linear-gradient(135deg, #7a5c3c, #c8a050)" },
@@ -95,6 +96,7 @@ uniform vec2 u_coverage;      // smoothstep min,max — wider = softer transitio
 uniform float u_lightWrapping;// background bleed onto person edge (0-1)
 uniform int u_blendMode;      // 0=Screen, 1=Linear dodge
 uniform int u_hasImageBg;     // 1 = image/upload bg (light wrap applies)
+uniform vec4 u_bgCover;       // xy = scale, zw = offset for cover crop
 in vec2 v_uv;
 out vec4 fragColor;
 
@@ -149,7 +151,8 @@ void main() {
   // ── Coverage (smoothstep) — configurable for softer transition ─────────────
   m = smoothstep(u_coverage.x, u_coverage.y, m);
 
-  vec4 bg = texture(u_bg, v_uv);
+  vec2 bgUV = v_uv * u_bgCover.xy + u_bgCover.zw;
+  vec4 bg = texture(u_bg, bgUV);
   vec4 base = mix(bg, vid, m);
 
   // ── Light wrapping (image/upload bg only): bleed bg onto person at edge ────
@@ -241,11 +244,13 @@ function initWebGL(gl) {
     u_lightWrapping: gl.getUniformLocation(program, "u_lightWrapping"),
     u_blendMode: gl.getUniformLocation(program, "u_blendMode"),
     u_hasImageBg: gl.getUniformLocation(program, "u_hasImageBg"),
+    u_bgCover: gl.getUniformLocation(program, "u_bgCover"),
   };
   gl.uniform1i(uniforms.u_video, 0);
   gl.uniform1i(uniforms.u_mask, 1);
   gl.uniform1i(uniforms.u_bg, 2);
   gl.uniform1i(uniforms.u_rawMask, 3);
+  gl.uniform4f(uniforms.u_bgCover, 1.0, 1.0, 0.0, 0.0);
 
   const u_maskTexelSizeLoc = gl.getUniformLocation(program, "u_maskTexelSize");
   gl.uniform2f(u_maskTexelSizeLoc, 1.0 / SEG_WIDTH, 1.0 / SEG_HEIGHT);
@@ -327,6 +332,7 @@ function useBackgroundEffect(videoRef, canvasRef, selectedBg, segmenterRef, segm
         gl.uniform2f(r.uniforms.u_texelSize, 1.0 / w, 1.0 / h);
         gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, w, h, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
         lastDimsRef.current = { w, h };
+        lastBgKeyRef.current = null; // recalculate bg cover on resize
       }
 
       gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, gl.RGBA, gl.UNSIGNED_BYTE, video);
@@ -396,14 +402,44 @@ function useBackgroundEffect(videoRef, canvasRef, selectedBg, segmenterRef, segm
         const img = bgImagesRef?.current?.[bg.id];
         if (img && lastBgKeyRef.current !== bg.id) {
           gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, img);
+          // Compute fit: show entire bg image without cropping
+          const videoAspect = w / h;
+          const bgAspect = img.naturalWidth / img.naturalHeight;
+          let sx = 1, sy = 1, ox = 0, oy = 0;
+          if (bgAspect > videoAspect) {
+            // bg is wider → fit width, pad top/bottom
+            sy = bgAspect / videoAspect;
+            oy = (1 - sy) / 2;
+          } else {
+            // bg is taller → fit height, pad sides
+            sx = videoAspect / bgAspect;
+            ox = (1 - sx) / 2;
+          }
+          gl.uniform4f(r.uniforms.u_bgCover, sx, sy, ox, oy);
           lastBgKeyRef.current = bg.id;
         }
       } else if (bg?.type === "upload" && curUploaded) {
         const key = "upload:" + curUploaded.src;
         if (lastBgKeyRef.current !== key) {
           gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, curUploaded);
+          const videoAspect = w / h;
+          const bgAspect = curUploaded.naturalWidth / curUploaded.naturalHeight;
+          let sx = 1, sy = 1, ox = 0, oy = 0;
+          if (bgAspect > videoAspect) {
+            sy = bgAspect / videoAspect;
+            oy = (1 - sy) / 2;
+          } else {
+            sx = videoAspect / bgAspect;
+            ox = (1 - sx) / 2;
+          }
+          gl.uniform4f(r.uniforms.u_bgCover, sx, sy, ox, oy);
           lastBgKeyRef.current = key;
         }
+      }
+
+      // Reset cover for blur bg (uses full video frame)
+      if (bg?.type === "blur") {
+        gl.uniform4f(r.uniforms.u_bgCover, 1.0, 1.0, 0.0, 0.0);
       }
 
       const pp = postProcessingRef.current || DEFAULT_POST_PROCESSING;
@@ -503,7 +539,10 @@ export default function RecordScreen({ onNext }) {
   useEffect(() => {
     BACKGROUNDS.filter((bg) => bg.type === "image" && bg.src).forEach((bg) => {
       const img = new Image();
-      img.onload = () => { bgImagesRef.current[bg.id] = img; };
+      img.onload = () => {
+        bgImagesRef.current[bg.id] = img;
+      };
+      img.onerror = (e) => console.error(`[BG] Failed to load ${bg.id}:`, bg.src, e);
       img.src = bg.src;
     });
   }, []);
@@ -838,7 +877,9 @@ export default function RecordScreen({ onNext }) {
                       background: bg.id === "upload" && uploadedImage
                         ? `url(${uploadedImage.src}) center/cover`
                         : bg.type === "image" && bg.src
-                        ? `url(${bg.src}) center/cover`
+                        ? bg.crop
+                          ? `url(${bg.src}) center top/cover`
+                          : `url(${bg.src}) center/cover`
                         : bg.preview,
                       ...(selectedBg === bg.id ? styles.bgThumbActive : {}),
                     }}
