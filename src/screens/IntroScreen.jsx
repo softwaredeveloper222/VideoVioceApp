@@ -45,7 +45,7 @@ export default function IntroScreen({ onNext }) {
         <button
           onClick={onNext}
           className="outline-btn anim-slide-up d5"
-          style={{ ...styles.outlineBtn, marginBottom: 16 }}
+          style={{ ...styles.outlineBtn, marginBottom: 54 }}
         >
           GET STARTED
         </button>
