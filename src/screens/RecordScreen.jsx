@@ -299,6 +299,8 @@ function useBackgroundEffect(videoRef, canvasRef, selectedBg, segmenterRef, segm
   const segCanvasRef = useRef(null);
   const segCtxRef = useRef(null);
   const maskU8Ref = useRef(null);
+  const maskInvertedRef = useRef(null); // null = not yet detected, true/false after detection
+  const maskCheckFrames = useRef(0);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -358,13 +360,54 @@ function useBackgroundEffect(videoRef, canvasRef, selectedBg, segmenterRef, segm
 
       let mask = null;
       try {
-        const result = segmenterRef.current.segment(segCanvasRef.current);
+        // Try canvas first, fall back to video element directly
+        let result;
+        try {
+          result = segmenterRef.current.segment(segCanvasRef.current);
+        } catch {
+          result = segmenterRef.current.segment(video);
+        }
         if (result.confidenceMasks?.length > 0) {
           mask = result.confidenceMasks[0].getAsFloat32Array();
         }
-      } catch { /* fall through */ }
+      } catch (e) { console.warn("Segmentation failed:", e); }
+
+      // Debug: log first mask stats
+      if (mask && !hasMaskRef.current) {
+        const sample = mask.slice(0, 20);
+        const avg = mask.reduce((a, v) => a + v, 0) / mask.length;
+        console.log("[BG] First mask — avg:", avg.toFixed(3), "sample:", Array.from(sample).map(v => v.toFixed(2)).join(","), "floatSupport:", r.supportsFloat);
+      }
 
       if (mask) {
+        // ── Auto-detect inverted mask (check first 10 frames) ──
+        if (maskInvertedRef.current === null && maskCheckFrames.current < 10) {
+          maskCheckFrames.current++;
+          // Sample center region of the mask — person is usually in the center
+          const cx = Math.floor(SEG_WIDTH / 2), cy = Math.floor(SEG_HEIGHT / 2);
+          const r2 = 10; // sample a 20x20 area
+          let sum = 0, count = 0;
+          for (let dy2 = -r2; dy2 <= r2; dy2++) {
+            for (let dx2 = -r2; dx2 <= r2; dx2++) {
+              const idx = (cy + dy2) * SEG_WIDTH + (cx + dx2);
+              if (idx >= 0 && idx < mask.length) { sum += mask[idx]; count++; }
+            }
+          }
+          const centerAvg = sum / count;
+          if (maskCheckFrames.current >= 5) {
+            // If center is mostly low (<0.3), mask is likely inverted
+            maskInvertedRef.current = centerAvg < 0.3;
+            if (maskInvertedRef.current) console.warn("Detected inverted segmentation mask, auto-correcting");
+          }
+        }
+
+        // Invert mask if needed
+        if (maskInvertedRef.current) {
+          for (let i = 0; i < mask.length; i++) {
+            mask[i] = 1.0 - mask[i];
+          }
+        }
+
         const needsAlloc = maskAllocRef.current.w !== SEG_WIDTH || maskAllocRef.current.h !== SEG_HEIGHT;
 
         if (r.supportsFloat) {
