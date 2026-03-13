@@ -399,12 +399,12 @@ export const styles = {
   },
   viewBgBtnAbovePanel: {
     alignSelf: "center",
-    marginBottom: -2,
+    marginBottom: -2.5,
     boxShadow: "none",
     borderLeft: "2px solid white",
     borderRight: "2px solid white",
     borderTop: "2px solid white",
-    borderBottom: "0px solid rgb(40, 48, 65)",//rgb(40, 48, 65)
+    borderBottom: "2px solid #07182D",
     borderBottomLeftRadius: 0,
     borderBottomRightRadius: 0,
     borderRadius: "10px 10px 0 0",
@@ -418,7 +418,7 @@ export const styles = {
     borderBottomLeftRadius: 0,
     borderBottomRightRadius: 0,
     padding: "14px 20px calc(20px + env(safe-area-inset-bottom, 0px))",
-    background: "rgb(40,48,65)",
+    background: "#07182D",//#07182D
     width: "100%",
     boxSizing: "border-box",
   },
@@ -455,7 +455,7 @@ export const styles = {
   recordBtnSquare: {
     width: 52, height: 52,
     display: "flex", alignItems: "center", justifyContent: "center",
-    background: "rgba(40,48,65,0.98)",
+    background: "#07182D",
     border: "4px solid rgba(255,255,255,0.95)",
     borderRadius: 10,
     cursor: "pointer", padding: 0,
@@ -600,7 +600,7 @@ export const styles = {
     display: "flex", alignItems: "center", justifyContent: "center",
     width: 56, height: 48,
     padding: 0,
-    background: "rgb(40,48,65)",
+    background: "#07182D",
     border: "2px solid white",
     borderRadius: 8,
     color: "#ffffff",
@@ -897,7 +897,7 @@ if (typeof document !== "undefined") {
     .view-bg-btn:hover { transform:translateY(-2px) scale(1.03); }
     .view-bg-btn:active { transform:scale(0.94); }
     .controls-row .view-bg-btn:hover { background:linear-gradient(135deg,rgba(45,52,72,0.98),rgba(55,45,85,0.98)) !important; border-color:rgba(255,255,255,0.35) !important; }
-    .view-bg-btn-panel:hover { transform:none !important; background:rgb(40,48,65) !important; border-left-color:white !important; border-right-color:white !important; border-top-color:white !important; }
+    .view-bg-btn-panel:hover { transform:none !important; background:#07182D !important; border-left-color:white !important; border-right-color:white !important; border-top-color:white !important; }
     .record-btn-square:hover { border-color:#fff !important; background:rgba(50,58,78,0.98) !important; }
     .record-btn-square:active { transform:scale(0.95) !important; }
     .bg-thumb:hover  { transform:scale(1.08); opacity:0.88; }
