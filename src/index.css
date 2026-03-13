@@ -64,6 +64,8 @@ body {
   color: #fff !important;
   opacity: 1 !important;
   font-family: 'CiscoSansTT', sans-serif !important;
+  font-size: 20px !important;
+  font-weight: 300 !important;
 }
 
 .email-input::-webkit-input-placeholder {

@@ -64,6 +64,11 @@
     max-width: 300px !important;
   }
 
+  .email-input::placeholder {
+    font-size: 18px !important;
+    font-weight: 300 !important;
+  }
+
   /* ── Buttons ── */
   .outline-btn {
     min-width: 300px !important;
@@ -181,6 +186,11 @@
   .email-input {
     padding: 12px 14px !important;
     font-size: 14px !important;
+  }
+
+  .email-input::placeholder {
+    font-size: 16px !important;
+    font-weight: 300 !important;
   }
 
   /* ── Buttons ── */
@@ -357,6 +367,11 @@
     max-width: 240px !important;
   }
 
+  .email-input::placeholder {
+    font-size: 14px !important;
+    font-weight: 300 !important;
+  }
+
   .success-lwyw-brand {
     margin-bottom: 44px !important;
   }
@@ -443,6 +458,11 @@
   .email-lwyw-brand {
     height: 40px !important;
     margin-bottom: 40px !important;
+  }
+
+  .email-input::placeholder {
+    font-size: 13px !important;
+    font-weight: 300 !important;
   }
 
   .question-heading {
