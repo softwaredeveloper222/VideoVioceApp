@@ -185,22 +185,9 @@ function createGLTexture(gl, filter) {
   return tex;
 }
 
-function testFloatTexture(gl) {
-  const tex = gl.createTexture();
-  gl.bindTexture(gl.TEXTURE_2D, tex);
-  const data = new Float32Array([0.5]);
-  gl.texImage2D(gl.TEXTURE_2D, 0, gl.R32F, 1, 1, 0, gl.RED, gl.FLOAT, data);
-  const err = gl.getError();
-  gl.deleteTexture(tex);
-  return err === gl.NO_ERROR;
-}
-
 function initWebGL(gl) {
   const hasFloatLinear = gl.getExtension("OES_texture_float_linear");
-  gl.getExtension("EXT_color_buffer_float");
-  const supportsFloat = testFloatTexture(gl);
-  if (!supportsFloat) console.warn("Float textures not supported, using R8 fallback");
-  const maskFilter = (supportsFloat && hasFloatLinear) ? gl.LINEAR : gl.NEAREST;
+  const maskFilter = hasFloatLinear ? gl.LINEAR : gl.NEAREST;
 
   const vs = compileShader(gl, VERT_SRC, gl.VERTEX_SHADER);
   const fs = compileShader(gl, FRAG_SRC, gl.FRAGMENT_SHADER);
@@ -263,7 +250,7 @@ function initWebGL(gl) {
   const u_maskTexelSizeLoc = gl.getUniformLocation(program, "u_maskTexelSize");
   gl.uniform2f(u_maskTexelSizeLoc, 1.0 / SEG_WIDTH, 1.0 / SEG_HEIGHT);
 
-  return { program, vao, buf, textures: { video: videoTex, mask: maskTex, rawMask: rawMaskTex, bg: bgTex }, uniforms, supportsFloat };
+  return { program, vao, buf, textures: { video: videoTex, mask: maskTex, rawMask: rawMaskTex, bg: bgTex }, uniforms };
 }
 
 // ─── Default post-processing (soft edges preset) ───────────────
@@ -298,9 +285,6 @@ function useBackgroundEffect(videoRef, canvasRef, selectedBg, segmenterRef, segm
   const hasMaskRef = useRef(false);
   const segCanvasRef = useRef(null);
   const segCtxRef = useRef(null);
-  const maskU8Ref = useRef(null);
-  const maskInvertedRef = useRef(null); // null = not yet detected, true/false after detection
-  const maskCheckFrames = useRef(0);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -360,102 +344,29 @@ function useBackgroundEffect(videoRef, canvasRef, selectedBg, segmenterRef, segm
 
       let mask = null;
       try {
-        // Try canvas first, fall back to video element directly
-        let result;
-        try {
-          result = segmenterRef.current.segment(segCanvasRef.current);
-        } catch {
-          result = segmenterRef.current.segment(video);
-        }
+        const result = segmenterRef.current.segment(segCanvasRef.current);
         if (result.confidenceMasks?.length > 0) {
           mask = result.confidenceMasks[0].getAsFloat32Array();
         }
-      } catch (e) { console.warn("Segmentation failed:", e); }
-
-      // Debug: log first mask stats
-      if (mask && !hasMaskRef.current) {
-        const sample = mask.slice(0, 20);
-        const avg = mask.reduce((a, v) => a + v, 0) / mask.length;
-        console.log("[BG] First mask — avg:", avg.toFixed(3), "sample:", Array.from(sample).map(v => v.toFixed(2)).join(","), "floatSupport:", r.supportsFloat);
-      }
+      } catch { /* fall through */ }
 
       if (mask) {
-        // ── Auto-detect inverted mask (check first 10 frames) ──
-        if (maskInvertedRef.current === null && maskCheckFrames.current < 10) {
-          maskCheckFrames.current++;
-          // Sample center region of the mask — person is usually in the center
-          const cx = Math.floor(SEG_WIDTH / 2), cy = Math.floor(SEG_HEIGHT / 2);
-          const r2 = 10; // sample a 20x20 area
-          let sum = 0, count = 0;
-          for (let dy2 = -r2; dy2 <= r2; dy2++) {
-            for (let dx2 = -r2; dx2 <= r2; dx2++) {
-              const idx = (cy + dy2) * SEG_WIDTH + (cx + dx2);
-              if (idx >= 0 && idx < mask.length) { sum += mask[idx]; count++; }
-            }
-          }
-          const centerAvg = sum / count;
-          if (maskCheckFrames.current >= 5) {
-            // If center is mostly low (<0.3), mask is likely inverted
-            maskInvertedRef.current = centerAvg < 0.3;
-            if (maskInvertedRef.current) console.warn("Detected inverted segmentation mask, auto-correcting");
-          }
-        }
-
-        // Invert mask if needed
-        if (maskInvertedRef.current) {
-          for (let i = 0; i < mask.length; i++) {
-            mask[i] = 1.0 - mask[i];
-          }
-        }
-
-        const needsAlloc = maskAllocRef.current.w !== SEG_WIDTH || maskAllocRef.current.h !== SEG_HEIGHT;
-
-        if (r.supportsFloat) {
-          // ── Float path (R32F) ──
-          gl.activeTexture(gl.TEXTURE3);
-          gl.bindTexture(gl.TEXTURE_2D, r.textures.rawMask);
-          if (needsAlloc) {
-            gl.texImage2D(gl.TEXTURE_2D, 0, gl.R32F, SEG_WIDTH, SEG_HEIGHT, 0, gl.RED, gl.FLOAT, mask);
-          } else {
-            gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, SEG_WIDTH, SEG_HEIGHT, gl.RED, gl.FLOAT, mask);
-          }
-
-          gl.activeTexture(gl.TEXTURE1);
-          gl.bindTexture(gl.TEXTURE_2D, r.textures.mask);
-          if (needsAlloc) {
-            gl.texImage2D(gl.TEXTURE_2D, 0, gl.R32F, SEG_WIDTH, SEG_HEIGHT, 0, gl.RED, gl.FLOAT, mask);
-          } else {
-            gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, SEG_WIDTH, SEG_HEIGHT, gl.RED, gl.FLOAT, mask);
-          }
+        gl.activeTexture(gl.TEXTURE3);
+        gl.bindTexture(gl.TEXTURE_2D, r.textures.rawMask);
+        if (maskAllocRef.current.w !== SEG_WIDTH || maskAllocRef.current.h !== SEG_HEIGHT) {
+          gl.texImage2D(gl.TEXTURE_2D, 0, gl.R32F, SEG_WIDTH, SEG_HEIGHT, 0, gl.RED, gl.FLOAT, mask);
         } else {
-          // ── Uint8 fallback (R8) for devices without float texture support ──
-          const len = SEG_WIDTH * SEG_HEIGHT;
-          if (!maskU8Ref.current || maskU8Ref.current.length !== len) {
-            maskU8Ref.current = new Uint8Array(len);
-          }
-          const u8 = maskU8Ref.current;
-          for (let i = 0; i < len; i++) {
-            u8[i] = (mask[i] * 255 + 0.5) | 0;
-          }
-
-          gl.activeTexture(gl.TEXTURE3);
-          gl.bindTexture(gl.TEXTURE_2D, r.textures.rawMask);
-          if (needsAlloc) {
-            gl.texImage2D(gl.TEXTURE_2D, 0, gl.R8, SEG_WIDTH, SEG_HEIGHT, 0, gl.RED, gl.UNSIGNED_BYTE, u8);
-          } else {
-            gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, SEG_WIDTH, SEG_HEIGHT, gl.RED, gl.UNSIGNED_BYTE, u8);
-          }
-
-          gl.activeTexture(gl.TEXTURE1);
-          gl.bindTexture(gl.TEXTURE_2D, r.textures.mask);
-          if (needsAlloc) {
-            gl.texImage2D(gl.TEXTURE_2D, 0, gl.R8, SEG_WIDTH, SEG_HEIGHT, 0, gl.RED, gl.UNSIGNED_BYTE, u8);
-          } else {
-            gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, SEG_WIDTH, SEG_HEIGHT, gl.RED, gl.UNSIGNED_BYTE, u8);
-          }
+          gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, SEG_WIDTH, SEG_HEIGHT, gl.RED, gl.FLOAT, mask);
         }
 
-        if (needsAlloc) maskAllocRef.current = { w: SEG_WIDTH, h: SEG_HEIGHT };
+        gl.activeTexture(gl.TEXTURE1);
+        gl.bindTexture(gl.TEXTURE_2D, r.textures.mask);
+        if (maskAllocRef.current.w !== SEG_WIDTH || maskAllocRef.current.h !== SEG_HEIGHT) {
+          gl.texImage2D(gl.TEXTURE_2D, 0, gl.R32F, SEG_WIDTH, SEG_HEIGHT, 0, gl.RED, gl.FLOAT, mask);
+          maskAllocRef.current = { w: SEG_WIDTH, h: SEG_HEIGHT };
+        } else {
+          gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, SEG_WIDTH, SEG_HEIGHT, gl.RED, gl.FLOAT, mask);
+        }
         hasMaskRef.current = true;
       }
 
