@@ -401,7 +401,7 @@ function useBackgroundEffect(videoRef, canvasRef, selectedBg, segmenterRef, segm
         const img = bgImagesRef?.current?.[bg.id];
         if (img && lastBgKeyRef.current !== bg.id) {
           gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, img);
-          // Compute fit: show entire bg image without cropping
+          // Contain fit: show entire bg image, edge pixels extend via CLAMP_TO_EDGE
           const videoAspect = w / h;
           const bgAspect = img.naturalWidth / img.naturalHeight;
           let sx = 1, sy = 1, ox = 0, oy = 0;
@@ -512,7 +512,15 @@ export default function RecordScreen({ onNext }) {
   const [recordBtnPressed, setRecordBtnPressed] = useState(false);
   const [showBgPanel, setShowBgPanel] = useState(false);
   const [bottomPanelAnimatingOut, setBottomPanelAnimatingOut] = useState(false);
+  const [isDesktop, setIsDesktop] = useState(
+    () => typeof window !== "undefined" && window.innerWidth > 768
+  );
 
+  useEffect(() => {
+    const onResize = () => setIsDesktop(window.innerWidth > 768);
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
 
   const handleBottomPanelHide = () => {
     setBottomPanelAnimatingOut(true);
@@ -550,8 +558,11 @@ export default function RecordScreen({ onNext }) {
     let cancelled = false;
     (async () => {
       try {
+        const isMobile = window.innerWidth <= 768;
         const stream = await navigator.mediaDevices.getUserMedia({
-          video: { width: 1280, height: 720, facingMode: "user" },
+          video: isMobile
+            ? { width: { ideal: 720 }, height: { ideal: 1280 }, facingMode: "user" }
+            : { width: 1280, height: 720, facingMode: "user" },
           audio: true,
         });
         if (cancelled) { stream.getTracks().forEach((t) => t.stop()); return; }
@@ -877,6 +888,8 @@ export default function RecordScreen({ onNext }) {
                         ? `url(${uploadedImage.src}) center/cover`
                         : bg.type === "none" && bg.card
                         ? `${bg.preview} url(${bg.card}) center/50% no-repeat`
+                        : bg.id === "lwyw-1" && isDesktop && bg.card
+                        ? `url(${bg.card}) center 72% / ${bg.cardSize || "cover"} no-repeat`
                         : bg.card
                         ? `url(${bg.card}) center/${bg.cardSize || "cover"} no-repeat`
                         : bg.type === "image" && bg.src
