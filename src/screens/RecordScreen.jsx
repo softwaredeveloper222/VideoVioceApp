@@ -13,7 +13,6 @@ const BACKGROUNDS = [
   { id: "lwyw-1", label: "LWYW 1", type: "image", src: "/backgrounds/LWYW_1.png", card: "/card_img/LWYW_card_1.png", preview: "linear-gradient(135deg, #c8956a, #f0ebe0)" },
   { id: "lwyw-2", label: "LWYW 2", type: "image", src: "/backgrounds/LWYW_2.png", card: "/card_img/LWYW_card_2.png", preview: "linear-gradient(135deg, #7a9ab0, #e8ecf0)" },
   { id: "lwyw-3", label: "LWYW 3", type: "image", src: "/backgrounds/LWYW_3.png", card: "/card_img/LWYW_card_3.png", cardSize: "85%", preview: "linear-gradient(135deg, #7a5c3c, #c8a050)" },
-  { id: "upload", label: "Custom", type: "upload", preview: "linear-gradient(135deg, #333, #666)" },
 ];
 
 const MAX_DURATION = 30;
@@ -483,8 +482,6 @@ export default function RecordScreen({ onNext }) {
   const streamRef = useRef(null);
   const chunksRef = useRef([]);
   const timerRef = useRef(null);
-  const fileInputRef = useRef(null);
-
   const [phase, setPhase] = useState("setup");
   const [countdown, setCountdown] = useState(3);
   const [elapsed, setElapsed] = useState(0);
@@ -493,7 +490,6 @@ export default function RecordScreen({ onNext }) {
   const [recordedUrl, setRecordedUrl] = useState(null);
   const [cameraReady, setCameraReady] = useState(false);
   const [cameraError, setCameraError] = useState(null);
-  const [uploadedImage, setUploadedImage] = useState(null);
   const POST_PROCESSING_KEY = "videoVoiceApp_edgeSmoothness";
   const loadSavedPostProcessing = () => {
     try {
@@ -541,7 +537,7 @@ export default function RecordScreen({ onNext }) {
 
   const bgImagesRef = useRef({});
   const { segmenterRef, segmenterReady, segmenterError } = useSegmenter();
-  useBackgroundEffect(videoRef, canvasRef, selectedBg, segmenterRef, segmenterReady, uploadedImage, bgImagesRef, postProcessing);
+  useBackgroundEffect(videoRef, canvasRef, selectedBg, segmenterRef, segmenterReady, null, bgImagesRef, postProcessing);
 
   useEffect(() => {
     BACKGROUNDS.filter((bg) => bg.type === "image" && bg.src).forEach((bg) => {
@@ -644,21 +640,6 @@ export default function RecordScreen({ onNext }) {
       videoRef.current.play();
     }
   };
-
-  const handleImageUpload = useCallback((e) => {
-    const file = e.target.files?.[0];
-    if (!file || !file.type.startsWith("image/")) return;
-    e.target.value = "";
-    if (uploadedImage?.src?.startsWith("blob:")) {
-      URL.revokeObjectURL(uploadedImage.src);
-    }
-    const img = new Image();
-    img.onload = () => {
-      setUploadedImage(img);
-      setSelectedBg("upload");
-    };
-    img.src = URL.createObjectURL(file);
-  }, [uploadedImage]);
 
   const progress = (elapsed / MAX_DURATION) * 100;
   const timeLeft = MAX_DURATION - elapsed;
@@ -875,18 +856,10 @@ export default function RecordScreen({ onNext }) {
               {BACKGROUNDS.map((bg) => (
                   <button
                     key={bg.id}
-                    onClick={() => {
-                      if (bg.type === "upload") {
-                        fileInputRef.current?.click();
-                      } else {
-                        setSelectedBg(bg.id);
-                      }
-                    }}
+                    onClick={() => setSelectedBg(bg.id)}
                     style={{
                       ...styles.bgThumb,
-                      background: bg.id === "upload" && uploadedImage
-                        ? `url(${uploadedImage.src}) center/cover`
-                        : bg.type === "none" && bg.card
+                      background: bg.type === "none" && bg.card
                         ? `${bg.preview} url(${bg.card}) center/50% no-repeat`
                         : bg.id === "lwyw-1" && isDesktop && bg.card
                         ? `url(${bg.card}) center 72% / ${bg.cardSize || "cover"} no-repeat`
@@ -900,22 +873,9 @@ export default function RecordScreen({ onNext }) {
                     className="bg-thumb"
                     title={bg.label}
                   >
-                    {bg.type === "upload" && !uploadedImage && (
-                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.6)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
-                      </svg>
-                    )}
-                    {bg.type === "upload" && <span style={styles.bgThumbLabel}>{bg.label}</span>}
                   </button>
                 ))}
             </div>
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="image/*"
-              onChange={handleImageUpload}
-              style={{ display: "none" }}
-            />
             </div>
           </div>
           )}
