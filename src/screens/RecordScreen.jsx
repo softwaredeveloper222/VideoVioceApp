@@ -499,6 +499,7 @@ export default function RecordScreen({ onNext }) {
   const [recordedUrl, setRecordedUrl] = useState(null);
   const [cameraReady, setCameraReady] = useState(false);
   const [cameraError, setCameraError] = useState(null);
+  const [isLandscape, setIsLandscape] = useState(() => window.innerWidth > window.innerHeight);
   const POST_PROCESSING_KEY = "videoVoiceApp_edgeSmoothness";
   const loadSavedPostProcessing = () => {
     try {
@@ -538,6 +539,13 @@ export default function RecordScreen({ onNext }) {
     return () => {
       try { screen.orientation?.unlock?.(); } catch (_) {}
     };
+  }, []);
+
+  // Detect landscape orientation
+  useEffect(() => {
+    const check = () => setIsLandscape(window.innerWidth > window.innerHeight);
+    window.addEventListener("resize", check);
+    return () => window.removeEventListener("resize", check);
   }, []);
 
   const handleBottomPanelHide = () => {
@@ -671,6 +679,24 @@ export default function RecordScreen({ onNext }) {
 
   const progress = (elapsed / MAX_DURATION) * 100;
   const timeLeft = MAX_DURATION - elapsed;
+
+  if (isLandscape) {
+    return (
+      <div style={{
+        ...styles.cameraScreen,
+        display: "flex", alignItems: "center", justifyContent: "center",
+        background: "#0d0d0f",
+      }}>
+        <div style={{ textAlign: "center", color: "rgba(255,255,255,0.7)", fontFamily: "'CiscoSansTT', sans-serif" }}>
+          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ marginBottom: 16, opacity: 0.6 }}>
+            <rect x="4" y="2" width="16" height="20" rx="2" /><line x1="12" y1="18" x2="12.01" y2="18" />
+          </svg>
+          <p style={{ fontSize: 18, fontWeight: 500, margin: "0 0 8px" }}>Please rotate your device</p>
+          <p style={{ fontSize: 14, fontWeight: 300, opacity: 0.6, margin: 0 }}>This app works in portrait mode only</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div style={styles.cameraScreen} className="camera-screen">
