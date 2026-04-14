@@ -320,19 +320,30 @@ function useBackgroundEffect(videoRef, canvasRef, selectedBg, segmenterRef, segm
       const curReady = segmenterReadyRef.current;
       const curUploaded = uploadedImageRef.current;
 
+      // Canvas = screen CSS size (no DPR scaling — produces standard video dimensions)
+      const cw = canvas.clientWidth || window.innerWidth;
+      const ch = canvas.clientHeight || window.innerHeight;
+
+      // Cover-fit viewport: video fills canvas, overflow is clipped
+      const coverScale = Math.max(cw / w, ch / h);
+      const vw = Math.round(w * coverScale);
+      const vh = Math.round(h * coverScale);
+      const vx = Math.round((cw - vw) / 2);
+      const vy = Math.round((ch - vh) / 2);
+
       gl.activeTexture(gl.TEXTURE0);
       gl.bindTexture(gl.TEXTURE_2D, r.textures.video);
-      if (lastDimsRef.current.w !== w || lastDimsRef.current.h !== h) {
-        canvas.width = w;
-        canvas.height = h;
-        gl.viewport(0, 0, w, h);
+      if (lastDimsRef.current.cw !== cw || lastDimsRef.current.ch !== ch || lastDimsRef.current.w !== w || lastDimsRef.current.h !== h) {
+        canvas.width = cw;
+        canvas.height = ch;
         gl.useProgram(r.program);
         gl.uniform2f(r.uniforms.u_texelSize, 1.0 / w, 1.0 / h);
         gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, w, h, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
-        lastDimsRef.current = { w, h };
+        lastDimsRef.current = { w, h, cw, ch };
         lastBgKeyRef.current = null;
       }
 
+      gl.viewport(vx, vy, vw, vh);
       gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, gl.RGBA, gl.UNSIGNED_BYTE, video);
 
       if (curBg === "none" || !curReady || !segmenterRef.current) {
