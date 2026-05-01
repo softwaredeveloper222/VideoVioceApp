@@ -707,7 +707,7 @@ export default function RecordScreen({ onNext }) {
 
       {/* Camera / preview canvas */}
       <div style={styles.cameraView} className="camera-view">
-        <canvas ref={canvasRef} style={{ ...styles.cameraFeed, display: phase === "preview" ? "none" : "block" }} />
+        <canvas ref={canvasRef} style={{ ...styles.cameraFeed, display: phase === "preview" ? "none" : "block", transform: "scaleX(-1)" }} />
         {phase === "preview" && (
           <video src={recordedUrl} style={styles.cameraFeed} controls={isDesktop} autoPlay loop playsInline />
         )}
